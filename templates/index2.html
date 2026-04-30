@@ -1,0 +1,1422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SignVox — Sign Language Detector</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Outfit:wght@200;400;600;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>
+        :root {
+            --bg: #f0f2f5;
+            --bg-secondary: #f7f8fa;
+            --card: #ffffff;
+            --card-hover: #f9fafb;
+            --border: #e5e7eb;
+            --fg: #1f2937;
+            --fg-muted: #6b7280;
+            --accent: #10b981;
+            --accent-dim: rgba(16, 185, 129, 0.08);
+            --accent-glow: rgba(16, 185, 129, 0.2);
+            --danger: #ef4444;
+            --danger-dim: rgba(239, 68, 68, 0.08);
+            --warning: #f59e0b;
+            --warning-dim: rgba(245, 158, 11, 0.08);
+            --blue: #3b82f6;
+            --blue-dim: rgba(59, 130, 246, 0.08);
+            --radius: 16px;
+            --radius-sm: 10px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background: var(--bg);
+            color: var(--fg);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* ===== Background Effects (Light) ===== */
+        .bg-grid {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            background-image:
+                linear-gradient(rgba(0, 0, 0, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 0, 0, 0.03) 1px, transparent 1px);
+            background-size: 60px 60px;
+            mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, black 20%, transparent 70%);
+            -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, black 20%, transparent 70%);
+        }
+
+        .bg-blob {
+            position: fixed;
+            border-radius: 50%;
+            filter: blur(120px);
+            z-index: 0;
+            pointer-events: none;
+            animation: blobFloat 12s ease-in-out infinite alternate;
+        }
+
+        .bg-blob--1 {
+            width: 500px; height: 500px;
+            background: rgba(16, 185, 129, 0.12);
+            top: -10%; left: -5%;
+        }
+
+        .bg-blob--2 {
+            width: 400px; height: 400px;
+            background: rgba(59, 130, 246, 0.08);
+            bottom: -10%; right: -5%;
+            animation-delay: -6s;
+        }
+
+        .bg-blob--3 {
+            width: 300px; height: 300px;
+            background: rgba(245, 158, 11, 0.06);
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            animation-delay: -3s;
+        }
+
+        @keyframes blobFloat {
+            0% { transform: translate(0, 0) scale(1); }
+            100% { transform: translate(30px, -20px) scale(1.1); }
+        }
+
+        /* ===== Navigation ===== */
+        .navbar {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 40px;
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+        }
+
+        .logo-icon {
+            width: 42px; height: 42px;
+            background: linear-gradient(135deg, var(--accent), #059669);
+            border-radius: 12px;
+            display: grid;
+            place-items: center;
+            font-size: 20px;
+            color: #ffffff;
+            box-shadow: 0 4px 12px var(--accent-glow);
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .logo:hover .logo-icon {
+            transform: rotate(-8deg) scale(1.08);
+            box-shadow: 0 6px 20px var(--accent-glow);
+        }
+
+        .logo-text {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 800;
+            font-size: 22px;
+            color: var(--fg);
+            letter-spacing: -0.5px;
+        }
+
+        .logo-text span {
+            color: var(--accent);
+        }
+
+        .nav-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 18px;
+            border-radius: 50px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            font-size: 13px;
+            color: var(--fg-muted);
+        }
+
+        .status-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--fg-muted);
+            transition: background 0.3s;
+        }
+
+        .status-dot.active {
+            background: var(--accent);
+            box-shadow: 0 0 8px var(--accent-glow);
+            animation: statusPulse 2s ease-in-out infinite;
+        }
+
+        @keyframes statusPulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        /* ===== Main Layout ===== */
+        .main-container {
+            position: relative;
+            z-index: 1;
+            max-width: 1360px;
+            margin: 0 auto;
+            padding: 32px 40px 60px;
+        }
+
+        .hero-section {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 16px;
+            border-radius: 50px;
+            background: var(--accent-dim);
+            border: 1px solid rgba(16, 185, 129, 0.15);
+            color: var(--accent);
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 20px;
+        }
+
+        .hero-badge i {
+            font-size: 11px;
+        }
+
+        .hero-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: clamp(36px, 5vw, 56px);
+            font-weight: 900;
+            line-height: 1.1;
+            letter-spacing: -1.5px;
+            margin-bottom: 14px;
+            color: var(--fg);
+        }
+
+        .hero-title .highlight {
+            background: linear-gradient(135deg, #059669, #10b981);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero-subtitle {
+            color: var(--fg-muted);
+            font-size: 17px;
+            max-width: 520px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+
+        /* ===== Grid Layout ===== */
+        .content-grid {
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            gap: 24px;
+            align-items: start;
+        }
+
+        /* ===== Card Base ===== */
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+            transition: border-color 0.3s, box-shadow 0.3s;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+        }
+
+        .card:hover {
+            border-color: rgba(16, 185, 129, 0.2);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 18px 24px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-secondary);
+        }
+
+        .card-header-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .card-header-icon {
+            width: 34px; height: 34px;
+            border-radius: var(--radius-sm);
+            display: grid;
+            place-items: center;
+            font-size: 15px;
+        }
+
+        .card-header-title {
+            font-weight: 600;
+            font-size: 15px;
+            color: var(--fg);
+        }
+
+        .card-body {
+            padding: 24px;
+        }
+
+        /* ===== Camera Section ===== */
+        .camera-card .card-header-icon {
+            background: var(--accent-dim);
+            color: var(--accent);
+        }
+
+        .camera-wrapper {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 4/3;
+            border-radius: var(--radius-sm);
+            overflow: hidden;
+            background: #0d0d14; /* Kept dark for camera view contrast */
+        }
+
+        .camera-wrapper video,
+        .camera-wrapper img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        /* Camera off placeholder */
+        .camera-placeholder {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            background: linear-gradient(135deg, #111118, #1a1a24);
+            transition: opacity 0.5s, visibility 0.5s;
+            z-index: 5;
+        }
+
+        .camera-placeholder.hidden {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        .cam-icon-ring {
+            width: 100px; height: 100px;
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.1);
+            display: grid;
+            place-items: center;
+            position: relative;
+            cursor: pointer;
+            transition: border-color 0.4s, transform 0.4s, box-shadow 0.4s;
+        }
+
+        .cam-icon-ring:hover {
+            border-color: var(--accent);
+            transform: scale(1.06);
+            box-shadow: 0 0 40px var(--accent-glow);
+        }
+
+        .cam-icon-ring::before {
+            content: '';
+            position: absolute;
+            inset: -8px;
+            border-radius: 50%;
+            border: 1px dashed rgba(16, 185, 129, 0.3);
+            animation: camSpin 20s linear infinite;
+        }
+
+        @keyframes camSpin {
+            to { transform: rotate(360deg); }
+        }
+
+        .cam-icon-ring i {
+            font-size: 36px;
+            color: rgba(255,255,255,0.5);
+            transition: color 0.3s;
+        }
+
+        .cam-icon-ring:hover i {
+            color: var(--accent);
+        }
+
+        .cam-placeholder-text {
+            font-size: 15px;
+            color: rgba(255,255,255,0.4);
+            text-align: center;
+            line-height: 1.6;
+        }
+
+        .cam-placeholder-text strong {
+            color: rgba(255,255,255,0.8);
+            display: block;
+            font-size: 17px;
+            margin-bottom: 4px;
+        }
+
+        /* Camera control bar */
+        .camera-controls {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            padding-top: 20px;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 28px;
+            border: none;
+            border-radius: 50px;
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            outline: none;
+        }
+
+        .btn:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 3px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent), #059669);
+            color: #ffffff;
+            box-shadow: 0 4px 12px var(--accent-glow);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(16, 185, 129, 0.3);
+        }
+
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+
+        .btn-danger {
+            background: var(--danger-dim);
+            color: var(--danger);
+            border: 1px solid rgba(239, 68, 68, 0.15);
+        }
+
+        .btn-danger:hover {
+            background: rgba(239, 68, 68, 0.15);
+            transform: translateY(-2px);
+        }
+
+        .btn-ghost {
+            background: var(--bg-secondary);
+            color: var(--fg-muted);
+            border: 1px solid var(--border);
+        }
+
+        .btn-ghost:hover {
+            color: var(--fg);
+            background: var(--card-hover);
+        }
+
+        /* ===== Detection Output ===== */
+        .detection-card .card-header-icon {
+            background: var(--blue-dim);
+            color: var(--blue);
+        }
+
+        .detection-display {
+            text-align: center;
+            padding: 20px 0;
+        }
+
+        .detected-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--fg-muted);
+            margin-bottom: 12px;
+        }
+
+        .detected-word {
+            font-family: 'Outfit', sans-serif;
+            font-size: 64px;
+            font-weight: 900;
+            color: var(--accent);
+            line-height: 1;
+            min-height: 72px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+        }
+
+        .detected-word.empty {
+            color: var(--border);
+            font-size: 28px;
+            font-weight: 400;
+        }
+
+        .confidence-bar-wrap {
+            margin-top: 20px;
+        }
+
+        .confidence-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: var(--fg-muted);
+            margin-bottom: 8px;
+        }
+
+        .confidence-bar {
+            height: 6px;
+            border-radius: 3px;
+            background: var(--bg-secondary);
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+
+        .confidence-fill {
+            height: 100%;
+            border-radius: 3px;
+            background: linear-gradient(90deg, var(--accent), #34d399);
+            width: 0%;
+            transition: width 0.5s ease;
+        }
+
+        /* ===== History Section ===== */
+        .history-card .card-header-icon {
+            background: var(--warning-dim);
+            color: var(--warning);
+        }
+
+        .history-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 320px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        .history-list::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .history-list::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .history-list::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 2px;
+        }
+
+        .history-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 14px;
+            border-radius: var(--radius-sm);
+            background: var(--bg-secondary);
+            border: 1px solid transparent;
+            animation: historySlideIn 0.35s ease-out;
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        .history-item:hover {
+            border-color: var(--border);
+            background: var(--card-hover);
+        }
+
+        @keyframes historySlideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-12px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .history-num {
+            width: 28px; height: 28px;
+            border-radius: 8px;
+            background: var(--accent-dim);
+            color: var(--accent);
+            display: grid;
+            place-items: center;
+            font-size: 12px;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .history-word {
+            font-weight: 600;
+            font-size: 15px;
+            color: var(--fg);
+            flex: 1;
+        }
+
+        .history-time {
+            font-size: 11px;
+            color: var(--fg-muted);
+        }
+
+        .history-empty {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--fg-muted);
+            font-size: 14px;
+        }
+
+        .history-empty i {
+            display: block;
+            font-size: 28px;
+            margin-bottom: 12px;
+            opacity: 0.4;
+        }
+
+        .btn-clear-history {
+            font-size: 12px;
+            padding: 6px 14px;
+            border-radius: 6px;
+        }
+
+        /* ===== Stats Bar ===== */
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-top: 24px;
+        }
+
+        .stat-item {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 18px 20px;
+            text-align: center;
+            transition: border-color 0.3s, box-shadow 0.3s;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+        }
+
+        .stat-item:hover {
+            border-color: rgba(0, 0, 0, 0.08);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.04);
+        }
+
+        .stat-value {
+            font-family: 'Outfit', sans-serif;
+            font-size: 28px;
+            font-weight: 800;
+            line-height: 1;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: var(--fg-muted);
+            margin-top: 6px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .stat-item:nth-child(1) .stat-value { color: var(--accent); }
+        .stat-item:nth-child(2) .stat-value { color: var(--blue); }
+        .stat-item:nth-child(3) .stat-value { color: var(--warning); }
+
+        /* ===== Guide Section ===== */
+        .guide-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 14px;
+        }
+
+        .guide-step {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 16px;
+            border-radius: var(--radius-sm);
+            background: var(--card);
+            border: 1px solid var(--border);
+            transition: border-color 0.3s, transform 0.3s, box-shadow 0.3s;
+        }
+
+        .guide-step:hover {
+            border-color: var(--accent);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.08);
+        }
+
+        .guide-step-num {
+            width: 30px; height: 30px;
+            border-radius: 8px;
+            background: var(--accent-dim);
+            color: var(--accent);
+            display: grid;
+            place-items: center;
+            font-size: 13px;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .guide-step-text {
+            font-size: 13px;
+            color: var(--fg-muted);
+            line-height: 1.5;
+        }
+
+        .guide-step-text strong {
+            color: var(--fg);
+            display: block;
+            margin-bottom: 2px;
+            font-size: 14px;
+        }
+
+        /* ===== Footer ===== */
+        footer {
+            position: relative;
+            z-index: 1;
+            text-align: center;
+            padding: 30px;
+            border-top: 1px solid var(--border);
+            color: var(--fg-muted);
+            font-size: 13px;
+            background: var(--card);
+            margin-top: 40px;
+        }
+
+        footer span {
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        /* ===== Toast Notification ===== */
+        .toast-container {
+            position: fixed;
+            top: 80px;
+            right: 24px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .toast {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 14px 20px;
+            border-radius: var(--radius-sm);
+            background: var(--card);
+            border: 1px solid var(--border);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.08);
+            font-size: 13px;
+            animation: toastIn 0.4s ease-out, toastOut 0.4s 2.6s ease-in forwards;
+            backdrop-filter: blur(12px);
+        }
+
+        .toast i {
+            font-size: 16px;
+        }
+
+        .toast.success i { color: var(--accent); }
+        .toast.error i { color: var(--danger); }
+        .toast.info i { color: var(--blue); }
+
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateX(40px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        @keyframes toastOut {
+            from { opacity: 1; transform: translateX(0); }
+            to { opacity: 0; transform: translateX(40px); }
+        }
+
+        /* ===== Responsive ===== */
+        @media (max-width: 900px) {
+            .content-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .navbar {
+                padding: 14px 20px;
+            }
+
+            .main-container {
+                padding: 24px 16px 40px;
+            }
+
+            .stats-row {
+                grid-template-columns: repeat(3, 1fr);
+            }
+
+            .detected-word {
+                font-size: 48px;
+            }
+        }
+
+        @media (max-width: 500px) {
+            .stats-row {
+                grid-template-columns: 1fr;
+            }
+
+            .guide-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .camera-controls {
+                flex-direction: column;
+            }
+
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+
+        /* ===== Reduced Motion ===== */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+
+        /* ===== Loading Spinner ===== */
+        .loading-spinner {
+            width: 32px; height: 32px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* ===== Scan Line Effect ===== */
+        .scan-line {
+            position: absolute;
+            left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
+            opacity: 0;
+            z-index: 4;
+            pointer-events: none;
+        }
+
+        .scan-line.active {
+            opacity: 0.8;
+            animation: scanMove 2.5s ease-in-out infinite;
+        }
+
+        @keyframes scanMove {
+            0% { top: 0; }
+            50% { top: 100%; }
+            100% { top: 0; }
+        }
+
+        /* Corner Brackets */
+        .corner-brackets {
+            position: absolute;
+            inset: 16px;
+            z-index: 3;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.5s;
+        }
+
+        .corner-brackets.active {
+            opacity: 1;
+        }
+
+        .corner-brackets::before,
+        .corner-brackets::after,
+        .corner-brackets span::before,
+        .corner-brackets span::after {
+            content: '';
+            position: absolute;
+            width: 24px; height: 24px;
+            border-color: var(--accent);
+            border-style: solid;
+            border-width: 0;
+        }
+
+        .corner-brackets::before {
+            top: 0; left: 0;
+            border-top-width: 2px;
+            border-left-width: 2px;
+        }
+
+        .corner-brackets::after {
+            top: 0; right: 0;
+            border-top-width: 2px;
+            border-right-width: 2px;
+        }
+
+        .corner-brackets span::before {
+            bottom: 0; left: 0;
+            border-bottom-width: 2px;
+            border-left-width: 2px;
+        }
+
+        .corner-brackets span::after {
+            bottom: 0; right: 0;
+            border-bottom-width: 2px;
+            border-right-width: 2px;
+        }
+
+        .corner-brackets span {
+            position: absolute;
+            inset: 0;
+        }
+
+        /* Live Badge */
+        .live-badge {
+            position: absolute;
+            top: 16px; left: 16px;
+            z-index: 6;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 12px;
+            border-radius: 6px;
+            background: rgba(239, 68, 68, 0.9);
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #fff;
+            opacity: 0;
+            transition: opacity 0.4s;
+        }
+
+        .live-badge.active {
+            opacity: 1;
+        }
+
+        .live-badge-dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: #fff;
+            animation: statusPulse 1s ease-in-out infinite;
+        }
+
+        /* Voice Indicator */
+        .voice-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+            margin-top: 16px;
+            height: 24px;
+        }
+
+        .voice-bar {
+            width: 3px;
+            height: 8px;
+            border-radius: 2px;
+            background: var(--accent);
+            transition: height 0.15s;
+        }
+
+        .voice-bar.speaking {
+            animation: voiceWave 0.6s ease-in-out infinite;
+        }
+
+        .voice-bar:nth-child(1) { animation-delay: 0s; }
+        .voice-bar:nth-child(2) { animation-delay: 0.1s; }
+        .voice-bar:nth-child(3) { animation-delay: 0.2s; }
+        .voice-bar:nth-child(4) { animation-delay: 0.3s; }
+        .voice-bar:nth-child(5) { animation-delay: 0.15s; }
+
+        @keyframes voiceWave {
+            0%, 100% { height: 6px; }
+            50% { height: 20px; }
+        }
+
+        .voice-label {
+            font-size: 11px;
+            color: var(--fg-muted);
+            margin-left: 8px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Background Effects -->
+    <div class="bg-grid"></div>
+    <div class="bg-blob bg-blob--1"></div>
+    <div class="bg-blob bg-blob--2"></div>
+    <div class="bg-blob bg-blob--3"></div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Navigation -->
+    <nav class="navbar" role="navigation" aria-label="Main navigation">
+        <a href="#" class="logo" aria-label="SignVox Home">
+            <div class="logo-icon">
+                <i class="fa-solid fa-hands-asl-interpreting"></i>
+            </div>
+            <span class="logo-text">Sign<span>Vox</span></span>
+        </a>
+        <div class="nav-status" aria-live="polite">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="statusText">Camera Offline</span>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-container">
+        <!-- Hero Section -->
+        <section class="hero-section">
+            <div class="hero-badge">
+                <i class="fa-solid fa-bolt"></i>
+                Real-time AI Detection
+            </div>
+            <h1 class="hero-title">
+                Detect <span class="highlight">Sign Language</span><br>
+                In Real Time
+            </h1>
+            <p class="hero-subtitle">
+                Recognize hand gestures with AI. Turn on the camera and see results instantly.
+            </p>
+        </section>
+
+        <!-- Guide Section -->
+        <section style="margin-bottom: 28px;">
+            <div class="guide-grid">
+                <div class="guide-step">
+                    <div class="guide-step-num">1</div>
+                    <div class="guide-step-text">
+                        <strong>Turn On Camera</strong>
+                        Click the button below to start
+                    </div>
+                </div>
+                <div class="guide-step">
+                    <div class="guide-step-num">2</div>
+                    <div class="guide-step-text">
+                        <strong>Show Your Hand</strong>
+                        Hold your hand clearly in front of the camera
+                    </div>
+                </div>
+                <div class="guide-step">
+                    <div class="guide-step-num">3</div>
+                    <div class="guide-step-text">
+                        <strong>AI Detects Signs</strong>
+                        Real-time sign language recognition
+                    </div>
+                </div>
+                <div class="guide-step">
+                    <div class="guide-step-num">4</div>
+                    <div class="guide-step-text">
+                        <strong>Hear the Word</strong>
+                        Listen to the audio of the detected word
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Grid -->
+        <div class="content-grid">
+            <!-- Left: Camera -->
+            <div>
+                <div class="card camera-card">
+                    <div class="card-header">
+                        <div class="card-header-left">
+                            <div class="card-header-icon">
+                                <i class="fa-solid fa-video"></i>
+                            </div>
+                            <span class="card-header-title">Camera Feed</span>
+                        </div>
+                        <span style="font-size: 12px; color: var(--fg-muted);" id="fpsCounter">-- FPS</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="camera-wrapper" id="cameraWrapper">
+                            <!-- LIVE Badge -->
+                            <div class="live-badge" id="liveBadge">
+                                <div class="live-badge-dot"></div>
+                                Live
+                            </div>
+                            <!-- Scan Line -->
+                            <div class="scan-line" id="scanLine"></div>
+                            <!-- Corner Brackets -->
+                            <div class="corner-brackets" id="cornerBrackets">
+                                <span></span>
+                            </div>
+                            <!-- Placeholder -->
+                            <div class="camera-placeholder" id="cameraPlaceholder">
+                                <div class="cam-icon-ring" id="camIconRing" role="button" tabindex="0" aria-label="Start Camera">
+                                    <i class="fa-solid fa-camera"></i>
+                                </div>
+                                <div class="cam-placeholder-text">
+                                    <strong>Click to start the camera</strong>
+                                    Or use the button below
+                                </div>
+                            </div>
+                            <!-- Video Feed -->
+                            <img id="videoFeed" src="" alt="Camera feed" style="display:none;">
+                        </div>
+
+                        <!-- Control Buttons -->
+                        <div class="camera-controls">
+                            <button class="btn btn-primary" id="btnStart" aria-label="Start Camera">
+                                <i class="fa-solid fa-play"></i>
+                                Camera Start
+                            </button>
+                            <button class="btn btn-danger" id="btnStop" style="display:none;" aria-label="Stop Camera">
+                                <i class="fa-solid fa-stop"></i>
+                                Camera Stop
+                            </button>
+                            <button class="btn btn-ghost" id="btnScreenshot" style="display:none;" aria-label="Take Screenshot">
+                                <i class="fa-solid fa-camera-retro"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stats -->
+                <div class="stats-row">
+                    <div class="stat-item">
+                        <div class="stat-value" id="statDetections">0</div>
+                        <div class="stat-label">Detections</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="statUptime">00:00</div>
+                        <div class="stat-label">Uptime</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="statWords">0</div>
+                        <div class="stat-label">Unique Words</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Detection + History -->
+            <aside>
+                <!-- Detection Card -->
+                <div class="card detection-card" style="margin-bottom: 20px;">
+                    <div class="card-header">
+                        <div class="card-header-left">
+                            <div class="card-header-icon">
+                                <i class="fa-solid fa-brain"></i>
+                            </div>
+                            <span class="card-header-title">Detection Output</span>
+                        </div>
+                        <i class="fa-solid fa-volume-high" style="color: var(--fg-muted); font-size: 14px;" id="voiceIcon"></i>
+                    </div>
+                    <div class="card-body">
+                        <div class="detection-display">
+                            <div class="detected-label">Detected Sign</div>
+                            <div class="detected-word empty" id="detectedWord">Waiting...</div>
+                            <div class="confidence-bar-wrap">
+                                <div class="confidence-label">
+                                    <span>Confidence</span>
+                                    <span id="confidenceValue">0%</span>
+                                </div>
+                                <div class="confidence-bar">
+                                    <div class="confidence-fill" id="confidenceFill"></div>
+                                </div>
+                            </div>
+                            <!-- Voice Indicator -->
+                            <div class="voice-indicator" id="voiceIndicator">
+                                <div class="voice-bar"></div>
+                                <div class="voice-bar"></div>
+                                <div class="voice-bar"></div>
+                                <div class="voice-bar"></div>
+                                <div class="voice-bar"></div>
+                                <span class="voice-label" id="voiceLabel">Voice Ready</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- History Card -->
+                <div class="card history-card">
+                    <div class="card-header">
+                        <div class="card-header-left">
+                            <div class="card-header-icon">
+                                <i class="fa-solid fa-clock-rotate-left"></i>
+                            </div>
+                            <span class="card-header-title">Detection History</span>
+                        </div>
+                        <button class="btn btn-ghost btn-clear-history" id="btnClearHistory" aria-label="Clear History">
+                            <i class="fa-solid fa-trash-can"></i>
+                            Clear
+                        </button>
+                    </div>
+                    <div class="card-body" style="padding: 16px;">
+                        <div class="history-list" id="historyList">
+                            <div class="history-empty" id="historyEmpty">
+                                <i class="fa-regular fa-clock"></i>
+                                No detections yet.<br>Start the camera and show your hand.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer>
+        Built with <span>SignVox</span> — AI-Powered Sign Language Detection
+    </footer>
+<script>
+    // ===== State Variables =====
+    let cameraActive = false;
+    let detectionCount = 0;
+    let uniqueWords = new Set();
+    let startTime = null;
+    let uptimeInterval = null;
+    let lastDetectedWord = '';
+    let historyItems = [];
+    let fpsFrames = 0;
+    let fpsLastTime = performance.now();
+    let voiceTimeout = null;
+
+    // ===== DOM Elements =====
+    const videoFeed = document.getElementById('videoFeed');
+    const cameraPlaceholder = document.getElementById('cameraPlaceholder');
+    const btnStart = document.getElementById('btnStart');
+    const btnStop = document.getElementById('btnStop');
+    const btnScreenshot = document.getElementById('btnScreenshot');
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const liveBadge = document.getElementById('liveBadge');
+    const scanLine = document.getElementById('scanLine');
+    const cornerBrackets = document.getElementById('cornerBrackets');
+    const detectedWord = document.getElementById('detectedWord');
+    const confidenceFill = document.getElementById('confidenceFill');
+    const confidenceValue = document.getElementById('confidenceValue');
+    const historyList = document.getElementById('historyList');
+    const historyEmpty = document.getElementById('historyEmpty');
+    const btnClearHistory = document.getElementById('btnClearHistory');
+    const statDetections = document.getElementById('statDetections');
+    const statUptime = document.getElementById('statUptime');
+    const statWords = document.getElementById('statWords');
+    const fpsCounter = document.getElementById('fpsCounter');
+    const voiceIndicator = document.getElementById('voiceIndicator');
+    const voiceLabel = document.getElementById('voiceLabel');
+
+    // ===== Camera Start =====
+    function startCamera() {
+        videoFeed.src = '/video_feed';
+        videoFeed.style.display = 'block';
+
+        cameraPlaceholder.classList.add('hidden');
+        btnStart.style.display = 'none';
+        btnStop.style.display = 'inline-flex';
+        btnScreenshot.style.display = 'inline-flex';
+
+        statusDot.classList.add('active');
+        statusText.textContent = 'Camera Active';
+        liveBadge.classList.add('active');
+        scanLine.classList.add('active');
+        cornerBrackets.classList.add('active');
+
+        cameraActive = true;
+
+        startTime = Date.now();
+        uptimeInterval = setInterval(updateUptime, 1000);
+
+        trackFPS();
+        fetchPrediction(); // 🔥 REAL AI CALL
+    }
+
+    // ===== Camera Stop =====
+    function stopCamera() {
+        videoFeed.src = '';
+        videoFeed.style.display = 'none';
+
+        cameraPlaceholder.classList.remove('hidden');
+        btnStart.style.display = 'inline-flex';
+        btnStop.style.display = 'none';
+        btnScreenshot.style.display = 'none';
+
+        statusDot.classList.remove('active');
+        statusText.textContent = 'Camera Offline';
+
+        liveBadge.classList.remove('active');
+        scanLine.classList.remove('active');
+        cornerBrackets.classList.remove('active');
+
+        cameraActive = false;
+
+        clearInterval(uptimeInterval);
+        fpsCounter.textContent = '-- FPS';
+
+        detectedWord.textContent = 'Waiting...';
+        detectedWord.classList.add('empty');
+        confidenceFill.style.width = '0%';
+        confidenceValue.textContent = '0%';
+    }
+
+    // ===== Fetch Prediction (REAL) =====
+    function fetchPrediction() {
+        if (!cameraActive) return;
+
+        fetch('/get_prediction')
+            .then(res => res.json())
+            .then(data => {
+
+                if (!data.word) return;
+
+                let word = data.word;
+                let confidence = data.confidence;
+
+                detectedWord.textContent = word;
+                detectedWord.classList.remove('empty');
+
+                confidenceFill.style.width = confidence + '%';
+                confidenceValue.textContent = confidence + '%';
+
+                if (word !== lastDetectedWord) {
+                    detectionCount++;
+                    statDetections.textContent = detectionCount;
+
+                    uniqueWords.add(word);
+                    statWords.textContent = uniqueWords.size;
+
+                    lastDetectedWord = word;
+
+                    addToHistory(word, confidence);
+                    triggerVoice(word);
+                }
+            });
+
+        setTimeout(fetchPrediction, 500);
+    }
+
+    // ===== History =====
+    function addToHistory(word, confidence) {
+        historyEmpty.classList.add('hidden');
+
+        const time = new Date().toLocaleTimeString();
+
+        historyItems.unshift({ word, confidence, time });
+
+        if (historyItems.length > 10) historyItems.pop();
+
+        historyList.innerHTML = '';
+
+        historyItems.forEach((item, index) => {
+            const div = document.createElement('div');
+            div.className = 'history-item';
+
+            div.innerHTML = `
+                <div class="history-num">${index + 1}</div>
+                <div class="history-word">${item.word}</div>
+                <div class="history-time">${item.time}</div>
+            `;
+
+            historyList.appendChild(div);
+        });
+    }
+
+    // ===== Voice =====
+    function triggerVoice(word) {
+        voiceLabel.textContent = word;
+        voiceIndicator.classList.add('speaking');
+
+        const speech = new SpeechSynthesisUtterance(word);
+        window.speechSynthesis.speak(speech);
+
+        clearTimeout(voiceTimeout);
+        voiceTimeout = setTimeout(() => {
+            voiceIndicator.classList.remove('speaking');
+        }, 1500);
+    }
+
+    // ===== FPS =====
+    function trackFPS() {
+        if (!cameraActive) return;
+
+        fpsFrames++;
+        const now = performance.now();
+
+        if (now - fpsLastTime >= 1000) {
+            fpsCounter.textContent = fpsFrames + ' FPS';
+            fpsFrames = 0;
+            fpsLastTime = now;
+        }
+
+        requestAnimationFrame(trackFPS);
+    }
+
+    // ===== Uptime =====
+    function updateUptime() {
+        const sec = Math.floor((Date.now() - startTime) / 1000);
+        const m = String(Math.floor(sec / 60)).padStart(2, '0');
+        const s = String(sec % 60).padStart(2, '0');
+        statUptime.textContent = `${m}:${s}`;
+    }
+
+    // ===== Screenshot =====
+    btnScreenshot.addEventListener('click', () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 640;
+        canvas.height = 480;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(videoFeed, 0, 0);
+
+        const link = document.createElement('a');
+        link.download = 'capture.png';
+        link.href = canvas.toDataURL();
+        link.click();
+    });
+
+    // ===== Clear History =====
+    btnClearHistory.addEventListener('click', () => {
+        historyItems = [];
+        historyList.innerHTML = '';
+        historyEmpty.classList.remove('hidden');
+
+        detectionCount = 0;
+        uniqueWords.clear();
+
+        statDetections.textContent = '0';
+        statWords.textContent = '0';
+    });
+
+    // ===== Buttons =====
+    btnStart.addEventListener('click', startCamera);
+    btnStop.addEventListener('click', stopCamera);
+</script>
+</body>
+</html>
